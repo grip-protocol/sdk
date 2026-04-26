@@ -1,6 +1,6 @@
 {
   "name": "@grip-labs/sdk",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Grip — money rails for software that spends. Wallets, limits, and approvals for autonomous agents on Base.",
   "type": "module",
   "main": "index.js",
@@ -40,10 +40,10 @@
   "homepage": "https://grip.wtf",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/grip-foundation/protocol.git"
+    "url": "git+https://github.com/grip-protocol/sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/grip-foundation/protocol/issues"
+    "url": "https://github.com/grip-protocol/sdk/issues"
   },
   "publishConfig": {
     "access": "public"
