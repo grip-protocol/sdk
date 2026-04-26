@@ -5,6 +5,7 @@ import { SmartWad } from "./lib/v2/wad.js"
 import { createSpendClient } from "./lib/v2/spend-client.js"
 import { deriveSmartAccount, getSmartAccountState } from "./lib/v2/smart-account.js"
 import { fundingDeeplink, waitForFunding } from "./lib/v2/funding.js"
+import { getAdapter as getOnrampAdapter, listProviders as listOnrampProviders, registerAdapter as registerOnrampAdapter } from "./lib/v2/onramp/index.js"
 import { adaptAccount } from "./lib/wallet.js"
 import { readUsdcBalance, transferUsdc, USDC_DECIMALS } from "./lib/usdc.js"
 
@@ -32,6 +33,9 @@ export {
   getSmartAccountState,
   fundingDeeplink,
   waitForFunding,
+  getOnrampAdapter,
+  listOnrampProviders,
+  registerOnrampAdapter,
 }
 
 export default grip
