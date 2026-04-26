@@ -49,6 +49,34 @@ describe("OnrampAdapter contract — coinbase", () => {
     assert.equal(session.provider, "coinbase")
   })
 
+  it("returns project-bound URL when COINBASE_CDP_PROJECT_ID is set", async () => {
+    process.env.COINBASE_CDP_PROJECT_ID = "test-project-uuid-1234"
+    try {
+      const adapter = getAdapter("coinbase")
+      const session = await adapter.createSession({
+        destinationAddress: TEST_ADDRESS,
+        amount: 10,
+      })
+      assert.equal(session.isStub, false)
+      assert.equal(session.projectId, "test-project-uuid-1234")
+      assert.match(session.url, /appId=test-project-uuid-1234/)
+      assert.match(session.url, /partnerUserId=/)
+    } finally {
+      delete process.env.COINBASE_CDP_PROJECT_ID
+    }
+  })
+
+  it("falls back to stub URL when no project ID configured", async () => {
+    delete process.env.COINBASE_CDP_PROJECT_ID
+    const adapter = getAdapter("coinbase")
+    const session = await adapter.createSession({
+      destinationAddress: TEST_ADDRESS,
+      amount: 10,
+    })
+    assert.equal(session.isStub, true)
+    assert.equal(session.projectId, undefined)
+  })
+
   it("rejects invalid destinationAddress", async () => {
     const adapter = getAdapter("coinbase")
     await assert.rejects(
