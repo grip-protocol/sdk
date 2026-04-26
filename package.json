@@ -1,0 +1,57 @@
+{
+  "name": "@grip-labs/sdk",
+  "version": "0.3.0",
+  "description": "Grip — money rails for software that spends. Wallets, limits, and approvals for autonomous agents on Base.",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "lib/",
+    "README.md",
+    "QUICKSTART.md",
+    "AGENT_INSTALL.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js test/v2/*.test.js"
+  },
+  "keywords": [
+    "agent",
+    "wallet",
+    "usdc",
+    "base",
+    "ai",
+    "autonomous",
+    "payments",
+    "erc-8004",
+    "erc-7715",
+    "session-keys"
+  ],
+  "author": "Grip Labs",
+  "license": "MIT",
+  "homepage": "https://grip.wtf",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/grip-foundation/protocol.git"
+  },
+  "bugs": {
+    "url": "https://github.com/grip-foundation/protocol/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  }
+}
