@@ -1,6 +1,6 @@
 {
   "name": "@grip-labs/sdk",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Grip — money rails for software that spends. Wallets, limits, and approvals for autonomous agents on Base.",
   "type": "module",
   "main": "index.js",
