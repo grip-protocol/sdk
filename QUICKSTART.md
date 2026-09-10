@@ -2,10 +2,11 @@
 
 A real 5-minute path to your first payment.
 
-This is written from the first-user path we actually ran on Base mainnet with `@grip-labs/sdk@0.2.1`.
+This is written from the first-user path we actually ran on Base mainnet with `@grip-labs/sdk@0.4.1`.
 
 If you want the short version:
 - bring a signer
+- init in **managed mode** (no Pimlico signup, no API keys)
 - derive a smart account
 - fund the smart account with USDC on Base
 - make the first payment
@@ -16,15 +17,16 @@ If you want the short version:
 You need:
 - Node 18+
 - USDC on Base
-- a Pimlico API key
 - a private key for your signer
+
+You do **not** need a Pimlico API key. You do **not** need to sign up for anything. Managed mode handles paymaster auth through Grip's hosted proxy.
 
 Create a clean folder:
 
 ```bash
 mkdir grip-quickstart && cd grip-quickstart
 npm init -y
-npm install @grip-labs/sdk@0.2.1
+npm install @grip-labs/sdk@latest
 ```
 
 What you should see:
@@ -43,14 +45,13 @@ Estimated time: 1 minute
 
 ---
 
-## Step 1. Save your keys
+## Step 1. Save your signer key
 
 Create a local env file:
 
 ```bash
 cat > .env <<'EOF'
 AGENT_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
-GRIP_PIMLICO_KEY=your_pimlico_key
 EOF
 ```
 
@@ -62,9 +63,9 @@ Most likely error:
 - Fix: use a 32-byte hex private key with `0x` prefix
 
 Why this step?
-**This gives the SDK your signer.**
+**This gives the SDK your signer. That's all it needs.**
 
-Estimated time: 1 minute
+Estimated time: 30 seconds
 
 ---
 
@@ -77,11 +78,10 @@ import fs from 'node:fs'
 import { grip } from '@grip-labs/sdk'
 
 const account = process.env.AGENT_PRIVATE_KEY || fs.readFileSync('.env', 'utf8').match(/AGENT_PRIVATE_KEY=(.*)/)?.[1]?.trim()
-const pimlicoApiKey = process.env.GRIP_PIMLICO_KEY || fs.readFileSync('.env', 'utf8').match(/GRIP_PIMLICO_KEY=(.*)/)?.[1]?.trim()
 
 const client = grip.init({
   account,
-  pimlicoApiKey,
+  managed: true,        // uses Grip's hosted paymaster proxy — no Pimlico signup
   mode: 'smart',
   network: 'base',
 })
@@ -108,8 +108,8 @@ wallet (smart):  0x2F6789008B945cc65F2B3A3F08E40fA459571dc7
 ```
 
 Most likely error:
-- `pimlicoApiKey is required` or similar init failure
-- Fix: check `GRIP_PIMLICO_KEY`
+- `mode "smart" needs paymaster auth`
+- Fix: you forgot `managed: true`. Add it. The error message also offers a BYOK Pimlico path — ignore that for the quickstart.
 
 Why this step?
 **This gives your agent a smart account.**
@@ -151,11 +151,10 @@ import { grip } from '@grip-labs/sdk'
 
 const env = fs.readFileSync('.env', 'utf8')
 const account = process.env.AGENT_PRIVATE_KEY || env.match(/AGENT_PRIVATE_KEY=(.*)/)?.[1]?.trim()
-const pimlicoApiKey = process.env.GRIP_PIMLICO_KEY || env.match(/GRIP_PIMLICO_KEY=(.*)/)?.[1]?.trim()
 
 const client = grip.init({
   account,
-  pimlicoApiKey,
+  managed: true,
   mode: 'smart',
   network: 'base',
 })
@@ -201,11 +200,10 @@ import { grip } from '@grip-labs/sdk'
 
 const env = fs.readFileSync('.env', 'utf8')
 const account = process.env.AGENT_PRIVATE_KEY || env.match(/AGENT_PRIVATE_KEY=(.*)/)?.[1]?.trim()
-const pimlicoApiKey = process.env.GRIP_PIMLICO_KEY || env.match(/GRIP_PIMLICO_KEY=(.*)/)?.[1]?.trim()
 
 const client = grip.init({
   account,
-  pimlicoApiKey,
+  managed: true,
   mode: 'smart',
   network: 'base',
 })
@@ -261,7 +259,7 @@ Estimated time: 15 seconds first pay, then ~3 seconds after
 
 Important:
 **First pay takes longer (~15s).**
-That’s the one-time wallet setup. Subsequent pays are usually ~3 seconds.
+That's the one-time wallet setup. Subsequent pays are usually ~3 seconds. Grip Labs sponsors the bootstrap (~$0.05) so you don't need ETH.
 
 Note: if this is your wallet's first ever payment, `bootstrapTxHash` will contain a real hash for the one-time wallet setup. On later payments it will be `null`.
 
@@ -277,11 +275,10 @@ import { grip } from '@grip-labs/sdk'
 
 const env = fs.readFileSync('.env', 'utf8')
 const account = process.env.AGENT_PRIVATE_KEY || env.match(/AGENT_PRIVATE_KEY=(.*)/)?.[1]?.trim()
-const pimlicoApiKey = process.env.GRIP_PIMLICO_KEY || env.match(/GRIP_PIMLICO_KEY=(.*)/)?.[1]?.trim()
 
 const client = grip.init({
   account,
-  pimlicoApiKey,
+  managed: true,
   mode: 'smart',
   network: 'base',
 })
@@ -328,7 +325,7 @@ The first payment includes one-time smart wallet setup and paymaster approval.
 ### I do not have ETH
 That is fine.
 In smart mode, you do not need ETH in the smart account.
-Gas is handled through the paymaster flow.
+Gas is handled through the paymaster flow. Grip Labs sponsors the bootstrap UserOp.
 
 ### My payment failed with a bad address error
 Use a valid `0x...` address on Base.
@@ -337,6 +334,26 @@ Checksum is fine, lowercase is also fine, but the address must be real hex.
 ### My balance is zero after funding
 You probably funded the signer instead of the smart account.
 Print both addresses again and compare.
+
+### The error mentions Pimlico
+You probably copied an old example. Add `managed: true` to your `grip.init({...})` call. You don't need a Pimlico key for the default path.
+
+---
+
+## Optional: BYOK Pimlico
+
+If you have your own Pimlico key (regulatory or budgeting reasons), swap `managed: true` for `pimlicoApiKey`:
+
+```js
+const client = grip.init({
+  account,
+  pimlicoApiKey: process.env.GRIP_PIMLICO_KEY,
+  mode: 'smart',
+  network: 'base',
+})
+```
+
+Get a key at https://www.pimlico.io. **The default flow does not require this.** Only use BYOK if managed mode is explicitly ruled out for your use case.
 
 ---
 
@@ -363,5 +380,6 @@ If you complete the steps above, you have already proven:
 - your smart account can hold USDC
 - your first payment can settle on Base
 - the paymaster path works without ETH
+- managed mode works without any third-party signup
 
 That is enough to start integrating a real agent.

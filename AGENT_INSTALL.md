@@ -1,6 +1,6 @@
 # Agent self-install guide
 
-This document is written for an autonomous AI agent to install Grip on its own runtime, with only one human action required (funding the wallet).
+This document is written for an autonomous AI agent to install Grip on its own runtime. **Only one human action is required: funding the wallet.** No signup, no API keys, no email confirmation.
 
 If you are a human reading this: you don't need to. Tell your agent: "install Grip for yourself" and link it here.
 
@@ -48,41 +48,16 @@ Expected: a `0x`-prefixed 66-character hex string.
 
 ---
 
-## Step 3 — Get a Pimlico API key (current friction)
+## Step 3 — Initialize the client in managed mode
 
-Today (v0.2.x) the agent needs a Pimlico API key for the paymaster path. The agent cannot complete this step alone — it requires email signup at https://www.pimlico.io.
-
-Two options:
-
-**Option A — Ask the human for the key (recommended for v0.2.x)**:
-
-The agent says to the human:
-> "I need a Pimlico API key for paymaster integration. Take 60 seconds: go to https://www.pimlico.io, sign up free, copy the API key (starts with `pim_`), and paste it back to me. This step disappears in v0.3 when Grip provides a managed key."
-
-The human pastes the key. The agent stores it securely.
-
-**Option B — Use the shared Grip dev key (v0.3, coming soon)**:
-
-```js
-const client = grip.init({
-  account: agentPrivateKey,
-  gripApiKey: 'grip_xxx',  // get one at https://grip.wtf/keys (no signup)
-  mode: 'smart',
-})
-```
-
-(This will be the default flow in v0.3. Until then, use Option A.)
-
----
-
-## Step 4 — Initialize the client and derive the smart account
+The agent uses `managed: true` so paymaster auth runs through Grip's hosted proxy. **No third-party signups.** No Pimlico. No API keys to ask the human for.
 
 ```js
 import { grip } from '@grip-labs/sdk'
 
 const client = grip.init({
   account: agentPrivateKey,
-  pimlicoApiKey: pimlicoKey,
+  managed: true,        // uses Grip's hosted paymaster proxy — zero signup
   mode: 'smart',
   network: 'base',
 })
@@ -95,9 +70,11 @@ Expected:
 - `smartAddress` is a `0x`-prefixed address (this is where USDC will live)
 - `eoaAddress` is a different address (the signer, controls the smart account)
 
+The first payment includes a one-time bootstrap (deploy + paymaster approval) — Grip Labs sponsors that bootstrap (~$0.05) so the agent doesn't need ETH.
+
 ---
 
-## Step 5 — Generate funding deeplink and present to human
+## Step 4 — Generate funding deeplink and present to human
 
 The agent generates a one-tap funding link tailored to the wallet the human likely has.
 
@@ -111,14 +88,14 @@ const link = await client.fundingDeeplink({
 The agent says to the human:
 > "To activate me, send $5 USDC on Base to my smart account. Tap this link, your wallet will open with the transfer pre-filled, just confirm:
 > {{link}}
-> 
+>
 > If you don't have Coinbase Wallet, ask me for a different wallet (Rainbow, MetaMask, or raw)."
 
 The agent does NOT proceed until the human confirms they sent the USDC, OR it detects the funding on-chain.
 
 ---
 
-## Step 6 — Wait for funding
+## Step 5 — Wait for funding
 
 ```js
 const result = await client.waitForFunding({
@@ -147,7 +124,7 @@ Expected:
 
 ---
 
-## Step 7 — Open a wad with caps
+## Step 6 — Open a wad with caps
 
 Caps are the spending limits the agent agrees to operate within. The defaults are conservative; the human can override.
 
@@ -166,7 +143,7 @@ The agent should ask the human for cap preferences before defaulting:
 
 ---
 
-## Step 8 — Test with a tiny payment
+## Step 7 — Test with a tiny payment
 
 The agent verifies the full flow with a self-test transfer of $0.01 to a known address (the agent's own EOA is fine for this test, or any test recipient).
 
@@ -187,7 +164,7 @@ if (testResult.status === 'confirmed') {
 The agent reports to the human:
 > "Installed and verified. First test payment confirmed:
 > {{testResult.basescanUrl}}
-> 
+>
 > I'm operational. Ask me to pay something whenever you want."
 
 ---
@@ -197,11 +174,12 @@ The agent reports to the human:
 After installation, the agent stores:
 
 - `agentPrivateKey` — secure storage, never logged
-- `pimlicoKey` — secure storage (or migrate to `gripApiKey` in v0.3)
 - `smartAddress` — can be derived from key but caching is convenient
 - `wadConfig` — `{ agentId, dailyCap, perTxCap, allowlist, expiresIn }`
 - `installedAt` — timestamp for audit log
 - `firstTestTxHash` — proof of working install
+
+Note: the agent does **not** need to store any paymaster key. Managed mode handles that transparently.
 
 ---
 
@@ -210,7 +188,7 @@ After installation, the agent stores:
 ```js
 async function handlePaymentRequest({ to, amount, reason }) {
   // 1. Re-init client (or reuse existing)
-  const client = grip.init({ account: agentPrivateKey, pimlicoApiKey, mode: 'smart' })
+  const client = grip.init({ account: agentPrivateKey, managed: true, mode: 'smart' })
   const wad = await client.openWad(wadConfig)
 
   // 2. Dry-run first
@@ -241,7 +219,7 @@ async function handlePaymentRequest({ to, amount, reason }) {
 
 | Error condition | Agent should |
 |---|---|
-| `pimlicoApiKey is required` | Ask human for the key (see Step 3) |
+| `mode "smart" needs paymaster auth` | Re-init with `{ managed: true }` — never ask human for Pimlico |
 | `Insufficient balance` | Tell human, generate new funding deeplink |
 | `Wad expired` | Open a new wad |
 | `Recipient not on allowlist` | Ask human to add recipient or override |
@@ -258,8 +236,9 @@ async function handlePaymentRequest({ to, amount, reason }) {
 - **Never share the private key with the human**. The human controls the agent, not the key.
 - **Never bypass caps unilaterally**. If a payment exceeds, escalate to human approval.
 - **Never invent recipient addresses**. If the human says "send $5 to John", ask for John's actual `0x` address.
-- **Never proceed past Step 6** if funding hasn't been verified on-chain.
+- **Never proceed past Step 5** if funding hasn't been verified on-chain.
 - **Never use `mode: 'eoa'`** unless the human explicitly requested self-custody mode.
+- **Never ask the human for a Pimlico API key.** The default flow is `managed: true`. If you find yourself drafting that message, you're on an outdated path — go back to Step 3.
 
 ---
 
@@ -279,21 +258,37 @@ Use the **dual-vocabulary rule**: in messages to the human, say "wallet" not "sm
 
 ---
 
-## Honest list of what's not solved yet (v0.2.x)
+## Optional: BYOK Pimlico (self-hosted paymaster)
+
+For agents that need to run on their own Pimlico key (regulatory, gas budgeting, dedicated infra), swap Step 3:
+
+```js
+const client = grip.init({
+  account: agentPrivateKey,
+  pimlicoApiKey: process.env.GRIP_PIMLICO_KEY,  // your own key from pimlico.io
+  mode: 'smart',
+  network: 'base',
+})
+```
+
+This requires the human to sign up at https://www.pimlico.io and paste the key. **Only use this path if managed mode is explicitly ruled out** — it adds friction the default flow doesn't have.
+
+---
+
+## Honest list of what's not solved yet
 
 The agent should know these gaps and surface them honestly to the human if asked:
 
-- Pimlico API key signup is human-required (v0.3 will hide this)
-- Funding only via USDC on Base — no fiat onramp built-in yet (v0.5)
-- Caps enforced locally in the agent's runtime (v0.3 ties them on-chain via SessionKeyManager)
-- No mobile dashboard for the human to monitor spending (v0.4 ships this)
-- No multi-recipient batches in one tx (v0.4)
-- No approval cards via Telegram/Discord/etc. for cap-exceeded scenarios (v0.4)
+- Funding only via USDC on Base — fiat onramp adapters exist (Coinbase, Crossmint) but require their own setup
+- Caps enforced locally in the agent's runtime (on-chain SessionKeyManager wrapper exists, integration WIP)
+- No mobile dashboard for the human to monitor spending yet
+- No multi-recipient batches in one tx yet
+- No approval cards via Telegram/Discord/etc. for cap-exceeded scenarios yet
 
 ---
 
 ## Versioning
 
-This document tracks `@grip-labs/sdk` v0.2.x semantics. Future versions may simplify steps 3-5 or remove them entirely.
+This document tracks `@grip-labs/sdk` v0.4.x semantics. The default install path is **managed mode, zero signup**. Earlier versions (v0.2.x) required Pimlico — that path still works as BYOK but is no longer the default.
 
-For agent runtimes that auto-update: `npm install @grip-labs/sdk@latest` is safe within the v0.2.x line. Major version bumps (v0.3.0, v1.0.0) may change the install flow — re-read this doc.
+For agent runtimes that auto-update: `npm install @grip-labs/sdk@latest` is safe within the v0.4.x line. Major version bumps may change the install flow — re-read this doc.
