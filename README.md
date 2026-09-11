@@ -61,8 +61,8 @@ That's it. The agent never holds ETH. Gas is paid in USDC by the smart account i
 ## What ships in v0.2.0
 
 - **Smart account mode (default)** — Coinbase Smart Wallet derived from any signer
-- **Sponsored bootstrap** — first UserOp deploys the smart account and sets up the paymaster, gas paid by Grip Labs (~$0.05 one-time CAC per user)
-- **ERC20 paymaster forever after** — every subsequent payment pays its own gas in USDC, no ETH ever required
+- **Sponsored bootstrap** — an undeployed account or zero paymaster allowance uses sponsored setup, paid from the configured Pimlico balance
+- **Finite ERC20 allowance** — approve 2.00 USDC and refill below 0.50 USDC; positive-allowance refills pay their own gas in USDC
 - **Same Wad API as v0.1** — `openWad`, `pay`, `evaluate`, `spent` all work the same
 - **Backwards compat** — pass `mode: 'eoa'` to use the v0.1 direct-EOA flow
 
@@ -128,7 +128,7 @@ Returns: client object. Methods differ slightly between modes:
 
 ### `wad.pay({ to, amount })`
 
-In smart mode, the first `pay()` triggers a one-time bootstrap (sponsored) and then the actual transfer (gas paid in USDC).
+In smart mode, the first `pay()` batches sponsored setup and the transfer in one UserOp. Later payments pay gas in USDC and, when needed, replenish the allowance in that same UserOp.
 
 ```ts
 {
@@ -141,16 +141,23 @@ In smart mode, the first `pay()` triggers a one-time bootstrap (sponsored) and t
 
 Throws `GripPolicyError` if caps or allowlist would be violated.
 
-## How sponsored bootstrap works
+## Paymaster allowance and gas funding
 
-When a smart account uses Grip for the first time:
+The SDK approves **2.00 USDC** (`BOOTSTRAP_USDC_BUDGET_RAW`) and replenishes it when the remaining allowance is **below 0.50 USDC** (`PAYMASTER_USDC_REFILL_THRESHOLD_RAW`). Each approval resets the allowance to 2.00; it does not add 2.00 to the remainder. This bounds each approval, not cumulative gas spending across automatic refills.
 
-1. SDK detects no on-chain code at the smart account address (or no paymaster allowance).
-2. SDK constructs a UserOp that deploys the smart account AND approves the Pimlico paymaster for max USDC.
-3. **The UserOp is sponsored** — Grip Labs pays the gas (~$0.05 USD) via Pimlico's verifying paymaster.
-4. After this single bootstrap, every subsequent UserOp uses the **ERC20 paymaster mode**: the user's smart account pays gas itself in USDC. No more sponsorship needed.
+| Account state | Calls in the payment UserOp | Gas payer |
+| --- | --- | --- |
+| Undeployed or allowance exactly zero | Approve 2.00 USDC, then transfer | Sponsored, billed to the configured Pimlico balance |
+| Deployed, allowance greater than zero but below 0.50 USDC | Approve 2.00 USDC, then transfer | Smart account, via ERC20 paymaster |
+| Deployed, allowance at or above 0.50 USDC | Transfer only | Smart account, via ERC20 paymaster |
 
-So: $0.05 of CAC for us per new user, then sustainable forever. Users never need ETH.
+Ordinary refills are atomic with the payment and require no separate sponsored operation. The explicit `ensureBootstrapped()` method can replenish allowance without a transfer, following the same payer rule. `client.state().bootstrapped` means deployed with allowance at or above the refill threshold; it is not a guarantee that the account has enough USDC for the next payment. Payment `bootstrapTxHash` continues to identify sponsored setup, not an ERC20 refill.
+
+The account needs enough USDC for both the transfer and its ERC20 gas charge. The SDK rejects an obviously insufficient balance before submission; Pimlico validation determines the actual gas requirement. Funding, validation, and transport errors propagate to the caller with **no automatic sponsored retry**. Fund the smart account before retrying an insufficient-balance failure. A failed UserOp receipt remains a failed payment. Zero allowance retains sponsored recovery and can therefore incur another sponsorship charge, even for an existing account.
+
+The batching follows [Pimlico's viem ERC20 paymaster example](https://docs.pimlico.io/guides/how-to/erc20-paymaster/how-to/use-paymaster-with-unlimited-approval), which includes an approval and the call in one UserOp. The configured [v0.6 Singleton paymaster](https://docs.pimlico.io/references/paymaster/erc20-paymaster/contract-addresses) can collect gas tokens after execution. A positive allowance and the 0.50 threshold alone do not guarantee validation under every provider prefund policy or gas price; such a rejection is surfaced, never silently sponsored.
+
+The 2.00/0.50 values provide headroom over the roughly 0.0037 USDC per settlement observed in the allowance brief; that observation is not a gas-price guarantee. Existing allowances above the threshold, including legacy unlimited approvals, are left unchanged. Reducing an existing live allowance is a separate, explicitly authorized migration after deploying this fix. This change does not perform that migration.
 
 ## On-chain context
 
