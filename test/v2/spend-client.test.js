@@ -1,7 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { decodeFunctionData, concat, maxUint256 } from "viem"
-import { createSpendClient } from "../../lib/v2/spend-client.js"
+import { allowanceRefillFloor, assertPositiveApproveAmount, createSpendClient } from "../../lib/v2/spend-client.js"
 import { PIMLICO_PAYMASTER_V06_BASE } from "../../lib/v2/constants.js"
 import {
   createOfflineRpc, TEST_OWNER, TEST_NETWORK, TEST_BUNDLER_URL,
@@ -179,4 +179,62 @@ describe("funding and failure behavior", () => {
       })
     }
   }
+})
+
+describe("explicit approve lowers a legacy allowance", () => {
+  it("allowance maxUint produces approve(2.00) and does not short-circuit", async (t) => {
+    const { client, rpc } = await setup(t, { allowance: maxUint256, deployed: true })
+    const skipped = await client.ensureBootstrapped()
+    assert.equal(skipped.alreadyDone, true, "ensureBootstrapped still short-circuits above the floor")
+    assert.equal(rpc.sent().length, 0)
+    const result = await client.approvePaymaster()
+    assert.equal(result.alreadyDone, false)
+    assert.equal(result.success, true)
+    await assertCalls(client, rpc, { approve: true, transfer: false })
+    assertPaymasterMode(rpc, false)
+  })
+
+  it("rejects approve amount 0 before building the UserOp", async (t) => {
+    const { client, rpc } = await setup(t, { allowance: maxUint256, deployed: true })
+    await assert.rejects(
+      client.approvePaymaster(0n),
+      /approve amount must be a positive raw USDC amount/,
+    )
+    assert.equal(rpc.sent().length, 0)
+    assert.equal(rpc.paymasterRequests().length, 0)
+    assert.throws(() => assertPositiveApproveAmount(0n), /positive raw USDC amount/)
+  })
+
+  it("refills when allowance clears the threshold but not the quote", async (t) => {
+    const { client, rpc } = await setup(t, { allowance: 500_001n, deployed: true })
+    assert.equal(allowanceRefillFloor(600_000n), 600_000n)
+    await client.transfer({ to: TEST_RECIPIENT, amount: 1, quoteMinor: 600_000n })
+    await assertCalls(client, rpc, { approve: true })
+    assertPaymasterMode(rpc, false)
+  })
+
+  it("succeeds with transfer only when allowance covers threshold and quote", async (t) => {
+    const { client, rpc } = await setup(t, { allowance: 2_000_000n, deployed: true })
+    const result = await client.transfer({ to: TEST_RECIPIENT, amount: 1, quoteMinor: 3_700n })
+    await assertCalls(client, rpc, { approve: false })
+    assert.equal(result.status, "confirmed")
+    assertPaymasterMode(rpc, false)
+  })
+
+  it("preserves a reverted explicit approve without a second send", async (t) => {
+    const { client, rpc } = await setup(t, { allowance: maxUint256, receiptSuccess: false })
+    const result = await client.approvePaymaster()
+    assert.equal(result.success, false)
+    assert.equal(rpc.sent().length, 1)
+    assert.equal(rpc.paymasterRequests().length, 2)
+  })
+
+  it("post-charge allowance above the floor sends transfer only", async (t) => {
+    // 2.00 approved, then postOp took 3700 raw. 1_996_300 still clears the floor and the next quote.
+    const charged = 2_000_000n - 3_700n
+    const { client, rpc } = await setup(t, { allowance: charged, deployed: true })
+    await client.transfer({ to: TEST_RECIPIENT, amount: 1, quoteMinor: 3_700n })
+    await assertCalls(client, rpc, { approve: false })
+    assertPaymasterMode(rpc, false)
+  })
 })
