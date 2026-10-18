@@ -143,7 +143,7 @@ Throws `GripPolicyError` if caps or allowlist would be violated.
 
 ## Paymaster allowance and gas funding
 
-The SDK approves **2.00 USDC** (`BOOTSTRAP_USDC_BUDGET_RAW`) and replenishes it when the remaining allowance is **below 0.50 USDC** (`PAYMASTER_USDC_REFILL_THRESHOLD_RAW`). Each approval resets the allowance to 2.00; it does not add 2.00 to the remainder. This bounds each approval, not cumulative gas spending across automatic refills.
+The SDK approves **2.00 USDC** (`BOOTSTRAP_USDC_BUDGET_RAW`) and replenishes it when the remaining allowance is **below 0.50 USDC** (`PAYMASTER_USDC_REFILL_THRESHOLD_RAW`). Each approval resets the allowance to 2.00; it does not add 2.00 to the remainder. This bounds each approval, not cumulative gas spending across automatic refills. `approvePaymaster(amount)` rejects 0 and any amount above 2.00 before it builds a UserOp. `transfer({ quoteMinor })` rejects a quote above 2.00 before send, because the approval cannot cover it.
 
 | Account state | Calls in the payment UserOp | Gas payer |
 | --- | --- | --- |

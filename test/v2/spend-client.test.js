@@ -1,7 +1,12 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { decodeFunctionData, concat, maxUint256 } from "viem"
-import { allowanceRefillFloor, assertPositiveApproveAmount, createSpendClient } from "../../lib/v2/spend-client.js"
+import {
+  allowanceRefillFloor,
+  assertApproveAmountWithinBudget,
+  assertPositiveApproveAmount,
+  createSpendClient,
+} from "../../lib/v2/spend-client.js"
 import { PIMLICO_PAYMASTER_V06_BASE } from "../../lib/v2/constants.js"
 import {
   createOfflineRpc, TEST_OWNER, TEST_NETWORK, TEST_BUNDLER_URL,
@@ -26,7 +31,7 @@ function assertPaymasterMode(rpc, sponsored) {
   }
 }
 
-async function assertCalls(client, rpc, { approve, transfer = true, amount = 1_000_000n, to = TEST_RECIPIENT }) {
+async function assertCalls(client, rpc, { approve, transfer = true, amount = 1_000_000n, to = TEST_RECIPIENT, approveAmount = 2_000_000n }) {
   assert.equal(rpc.sent().length, 1, "Exactly one UserOp must contain the complete action")
   const calls = await client.smartAccount.decodeCalls(rpc.sent()[0].callData)
   assert.equal(calls.length, Number(approve) + Number(transfer))
@@ -38,7 +43,7 @@ async function assertCalls(client, rpc, { approve, transfer = true, amount = 1_0
   if (approve) {
     assert.equal(decoded[0].functionName, "approve")
     assert.equal(decoded[0].args[0].toLowerCase(), PIMLICO_PAYMASTER_V06_BASE.toLowerCase())
-    assert.equal(decoded[0].args[1], 2_000_000n, "Approval must replenish the exact finite budget")
+    assert.equal(decoded[0].args[1], approveAmount, "Approval must encode this exact finite amount")
   }
   if (transfer) {
     const last = decoded.at(-1)
@@ -227,6 +232,55 @@ describe("explicit approve lowers a legacy allowance", () => {
     assert.equal(result.success, false)
     assert.equal(rpc.sent().length, 1)
     assert.equal(rpc.paymasterRequests().length, 2)
+  })
+
+  for (const { name, amount } of [
+    { name: "one raw unit above the budget", amount: 2_000_001n },
+    { name: "maxUint", amount: maxUint256 },
+  ]) {
+    it(`rejects approve(${name}) before building the UserOp`, async (t) => {
+      const { client, rpc } = await setup(t, { allowance: 2_000_000n, deployed: true })
+      await assert.rejects(
+        client.approvePaymaster(amount),
+        /exceeds the 2\.00 USDC budget/,
+      )
+      assert.equal(rpc.sent().length, 0)
+      assert.equal(rpc.paymasterRequests().length, 0)
+      assert.throws(() => assertApproveAmountWithinBudget(amount), /exceeds the 2\.00 USDC budget/)
+    })
+  }
+
+  it("encodes a non-default in-range approve amount exactly", async (t) => {
+    const amount = 1_250_000n
+    const { client, rpc } = await setup(t, { allowance: maxUint256, deployed: true })
+    const result = await client.approvePaymaster(amount)
+    assert.equal(result.alreadyDone, false)
+    assert.notEqual(amount, 2_000_000n)
+    await assertCalls(client, rpc, { approve: true, transfer: false, approveAmount: amount })
+    assertPaymasterMode(rpc, false)
+  })
+
+  for (const { name, allowance } of [
+    { name: "below the refill threshold", allowance: 499_999n },
+    { name: "already at the budget", allowance: 2_000_000n },
+    { name: "legacy maxUint", allowance: maxUint256 },
+  ]) {
+    it(`rejects a quote above 2.00 before send when allowance is ${name}`, async (t) => {
+      const { client, rpc } = await setup(t, { allowance, deployed: true })
+      await assert.rejects(
+        client.transfer({ to: TEST_RECIPIENT, amount: 1, quoteMinor: 2_000_001n }),
+        /exceeds the 2\.00 USDC allowance budget/,
+      )
+      assert.equal(rpc.sent().length, 0)
+      assert.equal(rpc.paymasterRequests().length, 0)
+    })
+  }
+
+  it("quote equal to 2.00 still refills and sends approve(2.00)", async (t) => {
+    const { client, rpc } = await setup(t, { allowance: 499_999n, deployed: true })
+    await client.transfer({ to: TEST_RECIPIENT, amount: 1, quoteMinor: 2_000_000n })
+    await assertCalls(client, rpc, { approve: true })
+    assertPaymasterMode(rpc, false)
   })
 
   it("post-charge allowance above the floor sends transfer only", async (t) => {
