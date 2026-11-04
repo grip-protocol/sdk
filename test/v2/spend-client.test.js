@@ -82,6 +82,26 @@ describe("transfer finite paymaster allowance, offline viem pipeline", () => {
   }
 })
 
+describe("both bundlers are returned", () => {
+  const calls = [{ to: TEST_RECIPIENT, value: 0n, data: "0x" }]
+
+  it("the sponsored bootstrap bundler sends with no paymaster context", async (t) => {
+    const { client, rpc } = await setup(t, { allowance: 0n, deployed: true })
+    assert.ok(client.bundlerSponsoredBootstrap, "A caller that splits quote and send needs this bundler")
+    assert.notEqual(client.bundlerSponsoredBootstrap, client.bundlerErc20Paymaster)
+    await client.bundlerSponsoredBootstrap.sendUserOperation({ calls })
+    assertPaymasterMode(rpc, true)
+    assert.equal(rpc.sent().length, 1)
+  })
+
+  it("the ERC-20 bundler still sends with the USDC context", async (t) => {
+    const { client, rpc } = await setup(t, { allowance: 500_001n, deployed: true })
+    await client.bundlerErc20Paymaster.sendUserOperation({ calls })
+    assertPaymasterMode(rpc, false)
+    assert.equal(rpc.sent().length, 1)
+  })
+})
+
 describe("ensureBootstrapped finite approval", () => {
   for (const scenario of allowanceCases) {
     it(scenario.name, async (t) => {
